@@ -19,9 +19,8 @@ def get_rectangle_points(img,bboxes):
 def draw_bbox_on_image(img,bboxes,color = (1, 1, 1),lw=1):
     points = get_rectangle_points(img,bboxes)
     img = cv2.polylines(img, [points], True, color, lw)
-    plt.imshow(img,cmap='gray')
-    plt.show()
-
+    return img
+    
 def segment(model,input_path,output_path,batch_size,tolerance,save_compare=False):
     data = Dataset.Test(input_path,batch_size)
     output_path = pathlib.Path(output_path)

@@ -3,6 +3,7 @@ import pandas as pd
 from sklearn import model_selection
 import matplotlib.pyplot as plt
 import pathlib
+import io
 
 import FLAGS
 import utils
@@ -152,9 +153,20 @@ for e in range(total_epochs):
                 tf.summary.text('Best GIOU loss',context)
     val_metric.reset_state()
 
+    test_records = []
     test_images, test_filepaths= next(test_data)
     test_preds = model.predict(test_images)
-    print('='*20,f'EPOCH:{e:0>4}','='*20)
     for test_filepath,test_pred in zip(test_filepaths,test_preds):
         test_img = plt.imread(test_filepath.as_posix())/255
-        utils.draw_bbox_on_image(test_img,test_pred,lw=10)
+        test_img = utils.draw_bbox_on_image(test_img,test_pred,lw=10)
+        plt.imshow(test_img,cmap='gray')
+        plt.axis(False)
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', bbox_inches='tight')
+        plt.close()
+        buf.seek(0)
+        test_img = tf.image.decode_png(buf.getvalue(), channels=3)
+        test_records.append(test_img)
+    test_records = tf.stack(test_records,axis=0)
+    with train_writer.as_default(step):
+        tf.summary.image('prediction on test data',test_records)
