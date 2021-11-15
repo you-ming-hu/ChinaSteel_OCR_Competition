@@ -3,9 +3,13 @@ import matplotlib.pyplot as plt
 import pathlib
 import tensorflow as tf
 from sklearn import model_selection
+import io
 
 import FLAGS
 import Dataset
+import utils
+
+FLAGS.CHECK()
 
 data_path = pathlib.Path(FLAGS.DATA.TRAIN.DATA_PATH)
 normal = pd.DataFrame(list(data_path.joinpath('normal').iterdir()),columns=['filepath'])
@@ -48,7 +52,7 @@ schedule_gamma = FLAGS.OPTIMIZER.SCHEDULE_GAMMA
 
 log_path = pathlib.Path(FLAGS.LOGGING.PATH).joinpath(FLAGS.LOGGING.MODEL_NAME,str(FLAGS.LOGGING.TRIAL_NUMBER))
 log_path.mkdir(parents=True)
-steps_per_log = FLAGS.LOGGING.STEPS_PER_LOG
+steps_per_log = FLAGS.LOGGING.SAMPLES_PER_LOG//FLAGS.DATA.TRAIN.TRAIN_BATCH_SIZE
 
 total_epochs = FLAGS.EPOCHS.TOTAL
 warmup_epochs = FLAGS.EPOCHS.WARMUP
@@ -74,27 +78,27 @@ optimizer = optimizer_type(schedule)
 label_smoothing = FLAGS.LOSS.LABEL_SMOOTHING
 bce_loss = tf.keras.losses.BinaryCrossentropy(from_logits=False, label_smoothing=label_smoothing)
 
-bce_metric = tf.keras.metrics.BinaryCrossentropy(from_logits=False, label_smoothing=label_smoothing)
-accuracy_metric = tf.keras.metrics.BinaryAccuracy(threshold=0.5)
+val_metrics = []
+
+bce_metric_name = 'BCE loss'
+train_bce_metric = tf.keras.metrics.BinaryCrossentropy(name=bce_metric_name ,from_logits=False, label_smoothing=label_smoothing)
+val_bce_metric = tf.keras.metrics.BinaryCrossentropy(name=bce_metric_name, from_logits=False, label_smoothing=label_smoothing)
+best_val_bce_metric_value = tf.Variable(0)
+val_metrics.append((val_bce_metric,best_val_bce_metric_value))
+
+accuracy_metric_name = 'Accuracy'
+train_accuracy_metric = tf.keras.metrics.BinaryAccuracy(name=accuracy_metric_name, threshold=0.5)
+val_accuracy_metric = tf.keras.metrics.BinaryAccuracy(name=accuracy_metric_name, threshold=0.5)
+best_val_accuracy_metric_value = tf.Variable(0)
+val_metrics.append((val_accuracy_metric,best_val_accuracy_metric_value))
 
 train_writer = tf.summary.create_file_writer(log_path.joinpath('summary','train').as_posix())
 validation_writer = tf.summary.create_file_writer(log_path.joinpath('summary','validation').as_posix())
 
-with train_writer.as_default():
-    config = [
-        f'FLAGS.DATA.TRAIN.VALIDATION_SPLIT_RATIO = {FLAGS.DATA.TRAIN.VALIDATION_SPLIT_RATIO}',
-        f'FLAGS.DATA.TRAIN.VALIDATION_SPLIT_RANDOM_STATE = {FLAGS.DATA.TRAIN.VALIDATION_SPLIT_RANDOM_STATE}',
-        f'FLAGS.DATA.TRAIN.TRAIN_BATCH_SIZE = {FLAGS.DATA.TRAIN.TRAIN_BATCH_SIZE}',
-        f'FLAGS.LOSS.LABEL_SMOOTHING = {FLAGS.LOSS.LABEL_SMOOTHING}'
-        f'FLAGS.OPTIMIZER.TYPE = {FLAGS.OPTIMIZER.TYPE}',
-        f'FLAGS.OPTIMIZER.MAX_LEARNING_RATE = {FLAGS.OPTIMIZER.MAX_LEARNING_RATE}',
-        f'FLAGS.OPTIMIZER.SCHEDULE_GAMMA = {FLAGS.OPTIMIZER.SCHEDULE_GAMMA}',
-        f'FLAGS.EPOCHS.TOTAL = {FLAGS.EPOCHS.TOTAL}',
-        f'FLAGS.EPOCHS.WARMUP = {FLAGS.EPOCHS.WARMUP}'
-        ]
-    config = '  \n'.join(config)
+with train_writer.as_default(0):
+    config = FLAGS.GET_CONFIG()
     note = f'Note:  \n{FLAGS.LOGGING.NOTE}'
-    tf.summary.test('Detail',[config,note])
+    tf.summary.text('Detail',[config,note])
 
 step = 1
 for e in range(total_epochs):
@@ -102,61 +106,49 @@ for e in range(total_epochs):
         image,overturn_label = batch_data
         with tf.GradientTape() as tape:
             predict = model(image)
-            loss = bce_loss(overturn_label,predict)
-            
+            loss = bce_loss(overturn_label,predict)   
         gradients = tape.gradient(loss, model.trainable_variables)
         optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-        
-        bce_metric.update_state(overturn_label,predict)
-        accuracy_metric.update_state(overturn_label,predict)
+
+        train_bce_metric.update_state(overturn_label,predict)
+        train_accuracy_metric.update_state(overturn_label,predict)
         
         step += 1
         if step%steps_per_log == 0:
             with train_writer.as_default(step):
-                tf.summary.scalar('BCE loss', bce_metric.result())
-                tf.summary.scalar('Accuracy', accuracy_metric.result())
-        
-    bce_metric.reset_state()
-    accuracy_metric.reset_state()
+                tf.summary.scalar(train_bce_metric.name, train_bce_metric.result())
+                tf.summary.scalar(train_accuracy_metric.name, train_accuracy_metric.result())
+                tf.summary.scalar('Learning rate', schedule(step))
+            train_bce_metric.reset_state()
+            train_accuracy_metric.reset_state()
     
-    print('='*20,f'EPOCH: {e}','='*20)
     for batch_data in validation_data:
         image,overturn_label = batch_data
         predict = model(image)
         loss = bce_loss(overturn_label,predict)
-        bce_metric.update_state(overturn_label,predict)
-        accuracy_metric.update_state(overturn_label,predict)
+        val_bce_metric.update_state(overturn_label,predict)
+        val_accuracy_metric.update_state(overturn_label,predict)
 
     save_weights_path = log_path.joinpath('weights',f'{e:0>4}')
     save_weights_path.mkdir()
     model.save_weights(save_weights_path.joinpath('weights').as_posix())
 
-    current_BCE_loss = bce_metric.result()
-    current_Accuracy = accuracy_metric.result()
-    with validation_writer.as_default(step):
-        tf.summary.scalar('BCE loss', current_BCE_loss)
-        tf.summary.scalar('Accuracy', current_Accuracy)
-        if e == 0:
-            best_BCE_loss = current_BCE_loss
-            best_Accuracy = current_Accuracy
-        else:
-            if current_BCE_loss < best_BCE_loss:
-                best_BCE_loss = current_BCE_loss
-                with train_writer.as_default(step):
-                    context = '  \n'.join([f'Epoch: {e}',f'Step: {step}', f'Loss: {best_BCE_loss}', f"Weight: {save_weights_path.joinpath('weights').as_posix()}"])
-                    tf.summary.text('Best BCE loss',context)
-            if current_Accuracy < best_Accuracy:
-                best_Accuracy = current_Accuracy
-                with train_writer.as_default(step):
-                    context = '  \n'.join([f'Epoch: {e}',f'Step: {step}', f'Loss: {best_Accuracy}', f"Weight: {save_weights_path.joinpath('weights').as_posix()}"])
-                    tf.summary.text('Best Accuracy loss',context)
-        
-    bce_metric.reset_state()
-    accuracy_metric.reset_state()
+    utils.log_best_val_metrics(e,step,val_metrics,save_weights_path,train_writer,validation_writer)
     
-    test_imgs,_ = next(test_data)
-    pred = model.predict(test_imgs)
-    for img,p in zip(test_imgs,pred):
-        print(p)
-        plt.imshow(img,cmap='gray')
-        plt.show()
+    test_records = []
+    test_imgs,test_filepaths = next(test_data)
+    test_preds = model.predict(test_imgs)
+    for test_filepath,test_pred in zip(test_filepaths,test_preds):
+        test_img = plt.imread(test_filepath.as_posix())
+        plt.imshow(test_img,cmap='gray')
+        plt.axis(False)
+        plt.title('Is rotated 180 degree?\nPrediction: ' + str(test_pred),fontsize=10)
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', bbox_inches='tight')
+        plt.close()
+        buf.seek(0)
+        test_img = tf.image.decode_png(buf.getvalue(), channels=3)
+        test_records.append(test_img)
+    test_records = tf.stack(test_records,axis=0)
+    with train_writer.as_default(step):
+        tf.summary.image('test data prediction',test_records)

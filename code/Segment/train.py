@@ -47,7 +47,7 @@ schedule_gamma = FLAGS.OPTIMIZER.SCHEDULE_GAMMA
 
 log_path = pathlib.Path(FLAGS.LOGGING.PATH).joinpath('model_'+str(FLAGS.LOGGING.MODEL_NAME),'trial_'+str(FLAGS.LOGGING.TRIAL_NUMBER))
 log_path.mkdir(parents=True)
-steps_per_log = FLAGS.LOGGING.STEPS_PER_LOG
+steps_per_log = FLAGS.LOGGING.SAMPLES_PER_LOG//FLAGS.DATA.TRAIN.TRAIN_BATCH_SIZE
 
 total_epochs = FLAGS.EPOCHS.TOTAL
 warmup_epochs = FLAGS.EPOCHS.WARMUP
@@ -100,8 +100,13 @@ def GIOU_loss(bboxes1,bboxes2):
     giou = iou - tf.math.divide_no_nan(enclose_area - union_area, enclose_area)
     return 1 - giou
 
-train_metric = tf.keras.metrics.Mean()
-val_metric = tf.keras.metrics.Mean()
+val_metrics = []
+
+giou_metric_name = 'GIOU loss'
+train_giou_metric = tf.keras.metrics.Mean(name=giou_metric_name)
+val_giou_metric = tf.keras.metrics.Mean(name=giou_metric_name)
+best_val_giou_metric_value = tf.Variable(0)
+val_metrics.append((val_giou_metric,best_val_giou_metric_value))
 
 train_writer = tf.summary.create_file_writer(log_path.joinpath('summary','train').as_posix())
 validation_writer = tf.summary.create_file_writer(log_path.joinpath('summary','validation').as_posix())
@@ -119,39 +124,28 @@ for e in range(total_epochs):
             raw_xywh = model(image,training=True)
             xywh = tf.keras.activations.sigmoid(raw_xywh)
             loss = GIOU_loss(bbox,xywh)
-            train_metric.update_state(loss)
+            train_giou_metric.update_state(loss)
             loss = tf.math.reduce_mean(loss)
         gradients = tape.gradient(loss, model.trainable_variables)
         optimizer.apply_gradients(zip(gradients, model.trainable_variables))
         step += 1
         if step%steps_per_log == 0:
             with train_writer.as_default(step):
-                tf.summary.scalar('GIOU loss', train_metric.result())
+                tf.summary.scalar(train_giou_metric.name, train_giou_metric.result())
                 tf.summary.scalar('Learning rate', schedule(step))
-            train_metric.reset_state()
+            train_giou_metric.reset_state()
     
     for batch_data in val_data:
         image,bbox = batch_data
         xywh = model.predict(image)
         loss = GIOU_loss(bbox,xywh)
-        val_metric.update_state(loss)
+        val_giou_metric.update_state(loss)
     
     save_weights_path = log_path.joinpath('weights',f'{e:0>4}')
     save_weights_path.mkdir(parents=True)
     model.save_weights(save_weights_path.joinpath('weights').as_posix())
     
-    current_GIOU_loss = val_metric.result()
-    with validation_writer.as_default(step):
-        tf.summary.scalar('GIOU loss', current_GIOU_loss)
-    if e == 0:
-        best_GIOU_loss = current_GIOU_loss
-    else:
-        if current_GIOU_loss < best_GIOU_loss:
-            best_GIOU_loss = current_GIOU_loss
-            with train_writer.as_default(step):
-                context = '  \n'.join([f'Epoch: {e}',f'Step: {step}', f'Loss: {best_GIOU_loss}', f"Weight: {save_weights_path.joinpath('weights').as_posix()}"])
-                tf.summary.text('Best GIOU loss',context)
-    val_metric.reset_state()
+    utils.log_best_val_metrics(e,step,val_metrics,save_weights_path,train_writer,validation_writer)
 
     test_records = []
     test_images, test_filepaths= next(test_data)
@@ -169,4 +163,4 @@ for e in range(total_epochs):
         test_records.append(test_img)
     test_records = tf.stack(test_records,axis=0)
     with train_writer.as_default(step):
-        tf.summary.image('prediction on test data',test_records)
+        tf.summary.image('test data prediction',test_records)

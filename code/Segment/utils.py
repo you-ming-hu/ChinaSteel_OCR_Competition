@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import cv2
 import pathlib
+import tensorflow as tf
 
 import INVARIANT
 import Dataset
@@ -75,3 +76,18 @@ def preprocess_table(table):
     xywh = bboxes.apply(coor_polygon_to_rect,axis=1)
     table = pd.concat([table,xywh],axis=1)
     return table
+
+def log_best_val_metrics(epoch,step,metrics,save_weights_path,train_writer,validation_writer):
+    for metric,best_value in metrics:
+        current_loss = metric.result()
+        with validation_writer.as_default(step):
+            tf.summary.scalar(metric.name, current_loss)
+        if epoch == 0:
+            best_value.assign(current_loss)
+        else:
+            if current_loss < best_value:
+                best_value.assign(current_loss)
+                with train_writer.as_default(step):
+                    context = '  \n'.join([f'Epoch: {epoch}',f'Step: {step}', f'Loss: {best_value}', f"Weight: {save_weights_path.joinpath('weights').as_posix()}"])
+                    tf.summary.text(metric.name,context)
+        metric.reset_state()

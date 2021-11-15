@@ -3,10 +3,14 @@ import matplotlib.pyplot as plt
 import pathlib
 import tensorflow as tf
 from sklearn import model_selection
+import io
 
 import FLAGS
 import INVARIANT
 import Dataset
+import utils
+
+FLAGS.CHECK()
 
 corpus_size = len(INVARIANT.CORPUS)
 
@@ -42,20 +46,19 @@ schedule_gamma = FLAGS.OPTIMIZER.SCHEDULE_GAMMA
 
 log_path = pathlib.Path(FLAGS.LOGGING.PATH).joinpath(FLAGS.LOGGING.MODEL_NAME,str(FLAGS.LOGGING.TRIAL_NUMBER))
 log_path.mkdir(parents=True)
-steps_per_log = FLAGS.LOGGING.STEPS_PER_LOG
+steps_per_log = FLAGS.LOGGING.SAMPLES_PER_LOG//FLAGS.DATA.TRAIN.TRAIN_BATCH_SIZE
 
 total_epochs = FLAGS.EPOCHS.TOTAL
 warmup_epochs = FLAGS.EPOCHS.WARMUP
 steps_per_epoch = len(train_data)
 warmup_steps = steps_per_epoch * warmup_epochs
 
-
-
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
     def __init__(self, max_lr, warmup_steps, gamma=-0.5):
         super().__init__()
         self.max_lr = tf.cast(max_lr, tf.float32)
         self.warmup_steps = tf.cast(warmup_steps,tf.float32)
+        assert gamma<0
         self.gamma = tf.cast(gamma,tf.float32)
 
     def __call__(self, step):
@@ -63,22 +66,10 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
         arg2 = step * (self.warmup_steps ** (self.gamma-1))
         return self.max_lr * (self.warmup_steps**-self.gamma) * tf.math.minimum(arg1, arg2)
 
-# model = FLAGS.MODEL
-
-# record_weights_path = pathlib.Path(FLAGS.TRAIN.RECORD_WEIGHTS_PATH)
-
-# max_lr = FLAGS.TRAIN.OPTIMIZER.MAX_LR
-# optimizer_type = FLAGS.TRAIN.OPTIMIZER.TYPE
-
-total_epochs = FLAGS.TRAIN.EPOCH.TOTAL
-warmup_epochs = FLAGS.TRAIN.EPOCH.WARMUP
-steps_per_epoch = len(train_data)
-warmup_steps = steps_per_epoch * warmup_epochs
-
-label_smoothing = FLAGS.TRAIN.LABEL_SMOOTHING
-
 schedule = CustomSchedule(max_lr,warmup_steps,FLAGS.TRAIN.OPTIMIZER.SCHEDULE_GAMMA)
 optimizer = optimizer_type(schedule)
+
+label_smoothing = FLAGS.TRAIN.LABEL_SMOOTHING
 
 def CE_loss(label,raw_predict,smoothing,corpus_size):
     one_hot_label = tf.one_hot(label,axis=-1,depth=corpus_size)
@@ -98,9 +89,33 @@ def Accuracy(label,raw_predict):
     all_correct = tf.cast(all_correct,tf.float64)
     return correct_ratio, all_correct
 
-cross_entropy_metric = tf.keras.metrics.Mean()
-correct_ratio_metric = tf.keras.metrics.Mean()
-all_correct_metric = tf.keras.metrics.Mean()
+val_metrics = []
+
+CE_metric_name = 'Cross Entropy loss'
+train_CE_metric = tf.keras.metrics.Mean(name=CE_metric_name)
+val_CE_metric = tf.keras.metrics.Mean(name=CE_metric_name)
+best_val_CE_metric_value = tf.Variable(0)
+val_metrics.append((val_CE_metric,best_val_CE_metric_value))
+
+correct_ratio_metric_name = 'Correct ratio'
+train_correct_ratio_metric = tf.keras.metrics.Mean(name=correct_ratio_metric_name)
+val_correct_ratio_metric = tf.keras.metrics.Mean(name=correct_ratio_metric_name)
+best_val_correct_ratio_metric_value = tf.Variable(0)
+val_metrics.append((val_correct_ratio_metric,best_val_correct_ratio_metric_value))
+
+all_correct_metric_name = 'All correct'
+train_all_correct_metric = tf.keras.metrics.Mean(name=all_correct_metric_name)
+val_all_correct_metric = tf.keras.metrics.Mean(name=all_correct_metric_name)
+best_val_all_correct_metric_value = tf.Variable(0)
+val_metrics.append((val_all_correct_metric,best_val_all_correct_metric_value))
+
+train_writer = tf.summary.create_file_writer(log_path.joinpath('summary','train').as_posix())
+validation_writer = tf.summary.create_file_writer(log_path.joinpath('summary','validation').as_posix())
+
+with train_writer.as_default(0):
+    config = FLAGS.GET_CONFIG()
+    note = f'Note:  \n{FLAGS.LOGGING.NOTE}'
+    tf.summary.text('Detail',[config,note])
 
 step = 1
 for e in range(total_epochs):
@@ -112,53 +127,50 @@ for e in range(total_epochs):
             mean_loss = tf.math.reduce_mean(loss)
         gradients = tape.gradient(mean_loss, model.trainable_variables)
         optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-        
         correct_ratio, all_correct = Accuracy(sequence,raw_predict)
-        
-        cross_entropy_metric.update_state(loss)
-        correct_ratio_metric.update_state(correct_ratio)
-        all_correct_metric.update_state(all_correct)
-        
+        train_CE_metric.update_state(loss)
+        train_correct_ratio_metric.update_state(correct_ratio)
+        train_all_correct_metric.update_state(all_correct)
         step += 1
-        if step%100 == 0:
-            print(f'STEP: {step:>6} TRAIN loss CE: {cross_entropy_metric.result():.5f}, Correct ratio {correct_ratio_metric.result():.5f}, All correct: {all_correct_metric.result():.5f}')
-        
-    cross_entropy_metric.reset_state()
-    correct_ratio_metric.reset_state()
-    all_correct_metric.reset_state()
+        if step%steps_per_log == 0:
+            with train_writer.as_default(step):
+                tf.summary.scalar(train_CE_metric.name, train_CE_metric.result())
+                tf.summary.scalar(train_correct_ratio_metric.name, train_correct_ratio_metric.result())
+                tf.summary.scalar(train_all_correct_metric.name, train_all_correct_metric.result())
+                tf.summary.scalar('Learning rate', schedule(step))
+            train_CE_metric.reset_state()
+            train_correct_ratio_metric.reset_state()
+            train_all_correct_metric.reset_state()
     
-    print('='*20,f'EPOCH: {e}','='*20)
-    for batch_data in validation_data:
+    for batch_data in val_data:
         image,sequence = batch_data
         raw_predict = model(image)
         loss = CE_loss(sequence,raw_predict,label_smoothing,corpus_size)
         correct_ratio, all_correct = Accuracy(sequence,raw_predict)
-        cross_entropy_metric.update_state(loss)
-        correct_ratio_metric.update_state(correct_ratio)
-        all_correct_metric.update_state(all_correct)
-    print(f'VALIDATION loss CE: {cross_entropy_metric.result():.5f}, Correct ratio {correct_ratio_metric.result():.5f}, All correct: {all_correct_metric.result():.5f}')
-    current_validation_loss = cross_entropy_metric.result()
-    if e == 0:
-        min_validation_loss = current_validation_loss
-        suffix = ''
-    else:
-        if  current_validation_loss < min_validation_loss:
-            min_validation_loss = current_validation_loss
-            suffix = '_SOTA'
-        else:
-            suffix = ''
+        val_CE_metric.update_state(loss)
+        val_correct_ratio_metric.update_state(correct_ratio)
+        val_all_correct_metric.update_state(all_correct)
     
-    save_weights_path = record_weights_path.joinpath(f'{e:0>4}_{current_validation_loss:.5f}{suffix}'.replace('.','p'))
-    save_weights_path.mkdir()
+    save_weights_path = log_path.joinpath('weights',f'{e:0>4}')
+    save_weights_path.mkdir(parents=True)
     model.save_weights(save_weights_path.joinpath('weights').as_posix())
     
-    cross_entropy_metric.reset_state()
-    correct_ratio_metric.reset_state()
-    all_correct_metric.reset_state()
-
-    test_imgs = next(test_data)
-    pred = model.predict(test_imgs)
-    for img,p in zip(test_imgs,pred):
-        print(p)
-        plt.imshow(img,cmap='gray')
-        plt.show()
+    utils.log_best_val_metrics(e,step,val_metrics,save_weights_path,train_writer,validation_writer)
+    
+    test_records = []
+    test_images,test_filepaths = next(test_data)
+    test_preds = model.predict(test_images)
+    for test_filepath,test_pred in zip(test_filepaths,test_preds):
+        test_img = plt.imread(test_filepath.as_posix())
+        plt.imshow(test_img,cmap='gray')
+        plt.axis(False)
+        plt.title('Predict string:\n'+test_pred,fontsize=10)
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', bbox_inches='tight')
+        plt.close()
+        buf.seek(0)
+        test_img = tf.image.decode_png(buf.getvalue(), channels=3)
+        test_records.append(test_img)
+    test_records = tf.stack(test_records,axis=0)
+    with train_writer.as_default(step):
+        tf.summary.image('test data prediction',test_records)
