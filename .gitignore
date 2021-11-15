@@ -1,6 +1,8 @@
-code/Segment/logs/model_1/trial_2/weights/
-*.jpg
-official/backup_zip/
-official/documents/
-code/Segment/__pycache__/
-code/Segment/.ipynb_checkpoints/
+dataset/
+official/
+
+**/weights/
+**/final_weight/
+
+**/__pycache__/
+**/.ipynb_checkpoints/
