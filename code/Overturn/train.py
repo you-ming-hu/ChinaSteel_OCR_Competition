@@ -83,13 +83,13 @@ val_metrics = []
 bce_metric_name = 'BCE loss'
 train_bce_metric = tf.keras.metrics.BinaryCrossentropy(name=bce_metric_name ,from_logits=False, label_smoothing=label_smoothing)
 val_bce_metric = tf.keras.metrics.BinaryCrossentropy(name=bce_metric_name, from_logits=False, label_smoothing=label_smoothing)
-best_val_bce_metric_value = tf.Variable(0)
+best_val_bce_metric_value = tf.Variable(0.)
 val_metrics.append((val_bce_metric,best_val_bce_metric_value))
 
 accuracy_metric_name = 'Accuracy'
 train_accuracy_metric = tf.keras.metrics.BinaryAccuracy(name=accuracy_metric_name, threshold=0.5)
 val_accuracy_metric = tf.keras.metrics.BinaryAccuracy(name=accuracy_metric_name, threshold=0.5)
-best_val_accuracy_metric_value = tf.Variable(0)
+best_val_accuracy_metric_value = tf.Variable(0.)
 val_metrics.append((val_accuracy_metric,best_val_accuracy_metric_value))
 
 train_writer = tf.summary.create_file_writer(log_path.joinpath('summary','train').as_posix())

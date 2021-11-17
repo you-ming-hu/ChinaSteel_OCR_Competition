@@ -94,19 +94,19 @@ val_metrics = []
 CE_metric_name = 'Cross Entropy loss'
 train_CE_metric = tf.keras.metrics.Mean(name=CE_metric_name)
 val_CE_metric = tf.keras.metrics.Mean(name=CE_metric_name)
-best_val_CE_metric_value = tf.Variable(0)
+best_val_CE_metric_value = tf.Variable(0.)
 val_metrics.append((val_CE_metric,best_val_CE_metric_value))
 
 correct_ratio_metric_name = 'Correct ratio'
 train_correct_ratio_metric = tf.keras.metrics.Mean(name=correct_ratio_metric_name)
 val_correct_ratio_metric = tf.keras.metrics.Mean(name=correct_ratio_metric_name)
-best_val_correct_ratio_metric_value = tf.Variable(0)
+best_val_correct_ratio_metric_value = tf.Variable(0.)
 val_metrics.append((val_correct_ratio_metric,best_val_correct_ratio_metric_value))
 
 all_correct_metric_name = 'All correct'
 train_all_correct_metric = tf.keras.metrics.Mean(name=all_correct_metric_name)
 val_all_correct_metric = tf.keras.metrics.Mean(name=all_correct_metric_name)
-best_val_all_correct_metric_value = tf.Variable(0)
+best_val_all_correct_metric_value = tf.Variable(0.)
 val_metrics.append((val_all_correct_metric,best_val_all_correct_metric_value))
 
 train_writer = tf.summary.create_file_writer(log_path.joinpath('summary','train').as_posix())

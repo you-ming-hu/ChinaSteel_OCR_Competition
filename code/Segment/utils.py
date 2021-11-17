@@ -88,6 +88,6 @@ def log_best_val_metrics(epoch,step,metrics,save_weights_path,train_writer,valid
             if current_loss < best_value:
                 best_value.assign(current_loss)
                 with train_writer.as_default(step):
-                    context = '  \n'.join([f'Epoch: {epoch}',f'Step: {step}', f'Loss: {best_value}', f"Weight: {save_weights_path.joinpath('weights').as_posix()}"])
-                    tf.summary.text(metric.name,context)
+                    context = '  \n'.join([f'Epoch: {epoch}',f'Step: {step}', f'Loss: {best_value.numpy()}', f"Weight: {save_weights_path.joinpath('weights').as_posix()}"])
+                    tf.summary.text('best '+metric.name,context)
         metric.reset_state()

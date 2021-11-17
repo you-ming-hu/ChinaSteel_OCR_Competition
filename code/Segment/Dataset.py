@@ -79,11 +79,17 @@ class Train(Base):
 
     def __len__(self):
         return self.table.index.size // self.batch_size + 1
+    
+    def __getitem__(self,key):
+        return __class__(self.table.iloc[key],self.image_path,self.batch_size,self.is_validation)
 
 class Test(Base):
     def __init__(self,image_path,batch_size):
         super().__init__(image_path,batch_size)
         self.image_paths = list(self.image_path.iterdir())
+        
+    def __len__(self):
+        return len(self.image_paths)
 
     def __iter__(self):
         self.count = 0
