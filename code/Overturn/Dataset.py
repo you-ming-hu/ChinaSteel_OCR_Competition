@@ -63,9 +63,6 @@ class Train(Base):
         self.table = table
         self.is_validation = is_validation
     
-    def __len__(self):
-        return self.table.index.size
-    
     def __iter__(self):
         self.count = 0
         if not self.is_validation:
@@ -94,7 +91,13 @@ class Train(Base):
             self.count += self.batch_size
             return batch_image,batch_overturn_label
         else:
-            raise StopIteration    
+            raise StopIteration
+    
+    def __len__(self):
+        return self.table.index.size
+
+    def __getitem__(self,key):
+        return __class__(self.table.iloc[key],self.batch_size,self.is_validation)
         
 class Test(Base):
     def __init__(self,image_path,batch_size):

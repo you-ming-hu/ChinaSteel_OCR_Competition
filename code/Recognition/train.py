@@ -4,6 +4,7 @@ import pathlib
 import tensorflow as tf
 from sklearn import model_selection
 import io
+import math
 
 import FLAGS
 import INVARIANT
@@ -157,20 +158,25 @@ for e in range(total_epochs):
     
     utils.log_best_val_metrics(e,step,val_metrics,save_weights_path,train_writer,validation_writer)
     
-    test_records = []
-    test_images,test_filepaths = next(test_data)
-    test_preds = model.predict(test_images)
-    for test_filepath,test_pred in zip(test_filepaths,test_preds):
-        test_img = plt.imread(test_filepath.as_posix())
-        plt.imshow(test_img,cmap='gray')
-        plt.axis(False)
-        plt.title('Predict string:\n'+test_pred,fontsize=10)
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png', bbox_inches='tight')
-        plt.close()
-        buf.seek(0)
-        test_img = tf.image.decode_png(buf.getvalue(), channels=3)
-        test_records.append(test_img)
-    test_records = tf.stack(test_records,axis=0)
+    ncols = FLAGS.LOGGING.TEST_IMAGE_COLUMNS
+    nrows = math.ceil(len(test_data)/ncols)
+    test_img_index = 1
+    plt.figure(figsize=(30,30),dpi=10)
+    for test_images, test_filepaths in test_data:
+        test_preds = model.predict(test_images)
+        for test_filepath,test_pred in zip(test_filepaths,test_preds):
+            test_img = plt.imread(test_filepath.as_posix())/255
+            test_img = utils.draw_bbox_on_image(test_img,test_pred,lw=10)
+            plt.subplot(nrows,ncols,test_img_index)
+            plt.imshow(test_img,cmap='gray')
+            plt.title('Predict string:\n'+test_pred,fontsize=10)
+            plt.axis(False)
+            test_img_index += 1
+    buf = io.BytesIO()
+    plt.savefig(buf, format='jpg', bbox_inches='tight', dpi=60)
+    plt.close()
+    buf.seek(0)
+    test_img = tf.image.decode_jpeg(buf.getvalue(), channels=3)
+    test_img = test_img[None,...]
     with train_writer.as_default(step):
-        tf.summary.image('test data prediction',test_records)
+        tf.summary.image('test data prediction',test_img)

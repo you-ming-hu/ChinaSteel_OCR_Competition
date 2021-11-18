@@ -31,6 +31,7 @@ LOGGING.MODEL_NAME = None
 LOGGING.TRIAL_NUMBER = None
 LOGGING.NOTE = None
 LOGGING.SAMPLES_PER_LOG = None
+LOGGING.TEST_IMAGE_COLUMNS = None
 
 def GET_CONFIG():
     return '  \n'.join([
@@ -65,4 +66,5 @@ def CHECK():
     assert isinstance(LOGGING.TRIAL_NUMBER,(int,str))
     assert isinstance(LOGGING.NOTE,str)
     assert isinstance(LOGGING.SAMPLES_PER_LOG,int)
+    assert isinstance(LOGGING.TEST_IMAGE_COLUMNS,int)
 
