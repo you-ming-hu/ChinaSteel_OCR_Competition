@@ -22,7 +22,7 @@ def draw_bbox_on_image(img,bboxes,color = (1, 1, 1),lw=1):
     img = cv2.polylines(img, [points], True, color, lw)
     return img
     
-def segment(model,input_path,output_path,batch_size,tolerance,save_compare=False):
+def segment(model,input_path,output_path,batch_size,tolerance,record_name,save_compare=False):
     data = Dataset.Test(input_path,batch_size)
     output_path = pathlib.Path(output_path)
     record = pd.DataFrame(columns=['filename','xmin','xmax','ymin','ymax','xcentre','ycentre','w','h','aspect'])
@@ -58,7 +58,7 @@ def segment(model,input_path,output_path,batch_size,tolerance,save_compare=False
                 img = np.squeeze(img)
                 plt.imsave(output_path.joinpath('compare',filepath.name).as_posix(),img,cmap='gray')
 
-    record.to_csv(output_path.joinpath('record.csv').as_posix(),index=False,encoding='utf8')
+    record.to_csv(output_path.joinpath(f'{record_name}.csv').as_posix(),index=False,encoding='utf8')
     return record
 
 def preprocess_table(table):
