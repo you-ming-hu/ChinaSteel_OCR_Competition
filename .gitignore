@@ -7,3 +7,5 @@ official/
 **/__pycache__/
 **/.ipynb_checkpoints/
 code/Segment/logs/
+code/Overturn/logs/
+code/Segment/final_weights/
