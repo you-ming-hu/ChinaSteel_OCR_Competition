@@ -3,6 +3,7 @@ import sklearn
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
+import math
 
 import INVARIANT
 
@@ -78,7 +79,7 @@ class Train(Base):
             raise StopIteration
 
     def __len__(self):
-        return self.table.index.size // self.batch_size + 1
+        return math.ceil(self.table.index.size/self.batch_size)
     
     def __getitem__(self,key):
         return __class__(self.table.iloc[key],self.image_path,self.batch_size,self.is_validation)

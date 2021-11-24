@@ -30,8 +30,9 @@ def segment(model,input_path,output_path,batch_size,tolerance,record_name,save_c
         preds = model.predict(imgs)
         preds = preds.numpy()
         preds[:,[2,3]] = preds[:,[2,3]]*tolerance
-        h,w = imgs.shape[1:3]
-        for filepath,img,pred in zip(filepaths,imgs,preds):
+        for filepath,pred in zip(filepaths,preds):
+            img = plt.imread(filepath.as_posix())/255
+            h,w = img.shape[0:3]
             xmin = np.clip(int((pred[0] - pred[2]/2)*w),0,w-1)
             xmax = np.clip(int((pred[0] + pred[2]/2)*w),0,w-1)
             ymin = np.clip(int((pred[1] - pred[3]/2)*h),0,h-1)

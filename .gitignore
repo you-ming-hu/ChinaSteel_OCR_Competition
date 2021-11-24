@@ -9,3 +9,5 @@ official/
 code/Segment/logs/
 code/Overturn/logs/
 code/Segment/final_weights/
+**/final_weights/
+**/logs/

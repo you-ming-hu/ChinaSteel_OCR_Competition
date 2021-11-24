@@ -4,10 +4,10 @@ import cv2
 import tensorflow as tf
 
 import Dataset
-
-def overturn_image(model,save_path):
-    data = Dataset.Test()
-    save_path = pathlib.Path(save_path)
+            
+def overturn_image(model,input_path,output_path,batch_size):
+    data = Dataset.Test(input_path,batch_size)
+    output_path = pathlib.Path(output_path)
     for images,filepaths in data:
         predicts = model.predict(images)
         for filepath,predict in zip(filepaths,predicts):
@@ -15,7 +15,7 @@ def overturn_image(model,save_path):
             if predict:
                 image = cv2.rotate(image, cv2.ROTATE_180)
             image = image[:,:,0]
-            plt.imsave(save_path.joinpath(filepath.name).as_posix(),image,cmap='gray')
+            plt.imsave(output_path.joinpath(filepath.name).as_posix(),image,cmap='gray')
 
 def log_best_val_metrics(epoch,step,metrics,save_weights_path,train_writer,validation_writer):
     for metric,best_value in metrics:
@@ -25,9 +25,16 @@ def log_best_val_metrics(epoch,step,metrics,save_weights_path,train_writer,valid
         if epoch == 0:
             best_value.assign(current_loss)
         else:
-            if current_loss < best_value:
-                best_value.assign(current_loss)
-                with train_writer.as_default(step):
-                    context = '  \n'.join([f'Epoch: {epoch}',f'Step: {step}', f'Loss: {best_value}', f"Weight: {save_weights_path.joinpath('weights').as_posix()}"])
-                    tf.summary.text('best '+metric.name,context)
+            if metric.name in ['BCE loss']:
+                if current_loss < best_value:
+                    best_value.assign(current_loss)
+                    with train_writer.as_default(step):
+                        context = '  \n'.join([f'Epoch: {epoch}',f'Step: {step}', f'{metric.name}: {best_value.numpy()}', f"Weight: {save_weights_path.joinpath('weights').as_posix()}"])
+                        tf.summary.text('best '+metric.name,context)
+            else:
+                if current_loss > best_value:
+                    best_value.assign(current_loss)
+                    with train_writer.as_default(step):
+                        context = '  \n'.join([f'Epoch: {epoch}',f'Step: {step}', f'{metric.name}: {best_value.numpy()}', f"Weight: {save_weights_path.joinpath('weights').as_posix()}"])
+                        tf.summary.text('best '+metric.name,context)
         metric.reset_state()

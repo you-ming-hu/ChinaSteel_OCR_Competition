@@ -26,16 +26,12 @@ train_overturn, val_overturn = model_selection.train_test_split(overturn, test_s
 train_table = train_normal.append(train_overturn,ignore_index=True)
 val_table = val_normal.append(val_overturn,ignore_index=True)
 
-train_data = Dataset.Train(train_table)
-validation_data = Dataset.Train(val_table)
-test_data = iter(Dataset.Test())
-
 train_data = Dataset.Train(
     table = train_table,
     batch_size = FLAGS.DATA.TRAIN.TRAIN_BATCH_SIZE,
     is_validation = False)
     
-val_data = Dataset.Train(
+validation_data = Dataset.Train(
     table = val_table,
     batch_size = FLAGS.DATA.TRAIN.VAL_BATCH_SIZE,
     is_validation = True)
@@ -51,7 +47,7 @@ optimizer_type = FLAGS.OPTIMIZER.TYPE
 max_lr = FLAGS.OPTIMIZER.MAX_LEARNING_RATE
 schedule_gamma = FLAGS.OPTIMIZER.SCHEDULE_GAMMA
 
-log_path = pathlib.Path(FLAGS.LOGGING.PATH).joinpath(FLAGS.LOGGING.MODEL_NAME,str(FLAGS.LOGGING.TRIAL_NUMBER))
+log_path = pathlib.Path(FLAGS.LOGGING.PATH).joinpath('model_'+str(FLAGS.LOGGING.MODEL_NAME),'trial_'+str(FLAGS.LOGGING.TRIAL_NUMBER))
 log_path.mkdir(parents=True)
 steps_per_log = FLAGS.LOGGING.SAMPLES_PER_LOG//FLAGS.DATA.TRAIN.TRAIN_BATCH_SIZE
 
@@ -107,7 +103,7 @@ for e in range(total_epochs):
         image,overturn_label = batch_data
         with tf.GradientTape() as tape:
             predict = model(image)
-            loss = bce_loss(overturn_label,predict)   
+            loss = bce_loss(overturn_label,predict)
         gradients = tape.gradient(loss, model.trainable_variables)
         optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
@@ -131,7 +127,7 @@ for e in range(total_epochs):
         val_accuracy_metric.update_state(overturn_label,predict)
 
     save_weights_path = log_path.joinpath('weights',f'{e:0>4}')
-    save_weights_path.mkdir()
+    save_weights_path.mkdir(parents=True)
     model.save_weights(save_weights_path.joinpath('weights').as_posix())
 
     utils.log_best_val_metrics(e,step,val_metrics,save_weights_path,train_writer,validation_writer)
@@ -139,16 +135,19 @@ for e in range(total_epochs):
     ncols = FLAGS.LOGGING.TEST_IMAGE_COLUMNS
     nrows = math.ceil(len(test_data)/ncols)
     test_img_index = 1
-    plt.figure(figsize=(30,30),dpi=10)
+    fig = plt.figure(figsize=(30,30),dpi=10)
+    plt.title('Is image rotated by 180 degree?',fontsize=40)
+    plt.axis(False)
     for test_images, test_filepaths in test_data:
         test_preds = model.predict(test_images)
         for test_filepath,test_pred in zip(test_filepaths,test_preds):
             test_img = plt.imread(test_filepath.as_posix())/255
-            plt.subplot(nrows,ncols,test_img_index)
+            fig.add_subplot(nrows,ncols,test_img_index)
             plt.imshow(test_img,cmap='gray')
-            plt.title('Is rotated 180 degree?\nPrediction: ' + str(test_pred),fontsize=20)
+            plt.title('Prediction:  ' + str(test_pred),fontsize=20)
             plt.axis(False)
             test_img_index += 1
+    
     buf = io.BytesIO()
     plt.savefig(buf, format='jpg', bbox_inches='tight', dpi=60)
     plt.close()

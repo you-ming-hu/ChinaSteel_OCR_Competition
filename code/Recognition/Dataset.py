@@ -2,6 +2,7 @@ import pathlib
 import sklearn
 import numpy as np
 import tensorflow as tf
+import math
 
 import INVARIANT
 import utils
@@ -66,7 +67,7 @@ class Train(Base):
         self.is_validation = is_validation
     
     def __len__(self):
-        return self.table.index.size
+        return math.ceil(self.table.index.size/self.batch_size)
 
     def __getitem__(self,key):
         return __class__(self.table.iloc[key],self.image_path,self.batch_size,self.is_validation)
@@ -122,3 +123,6 @@ class Test(Base):
             return batch_image,batch_filepath
         else:
             raise StopIteration
+        
+    def __len__(self):
+        return len(self.image_paths)

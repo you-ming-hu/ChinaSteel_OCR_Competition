@@ -45,7 +45,7 @@ optimizer_type = FLAGS.OPTIMIZER.TYPE
 max_lr = FLAGS.OPTIMIZER.MAX_LEARNING_RATE
 schedule_gamma = FLAGS.OPTIMIZER.SCHEDULE_GAMMA
 
-log_path = pathlib.Path(FLAGS.LOGGING.PATH).joinpath(FLAGS.LOGGING.MODEL_NAME,str(FLAGS.LOGGING.TRIAL_NUMBER))
+log_path = pathlib.Path(FLAGS.LOGGING.PATH).joinpath('model_'+str(FLAGS.LOGGING.MODEL_NAME),'trial_'+str(FLAGS.LOGGING.TRIAL_NUMBER))
 log_path.mkdir(parents=True)
 steps_per_log = FLAGS.LOGGING.SAMPLES_PER_LOG//FLAGS.DATA.TRAIN.TRAIN_BATCH_SIZE
 
@@ -67,10 +67,10 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
         arg2 = step * (self.warmup_steps ** (self.gamma-1))
         return self.max_lr * (self.warmup_steps**-self.gamma) * tf.math.minimum(arg1, arg2)
 
-schedule = CustomSchedule(max_lr,warmup_steps,FLAGS.TRAIN.OPTIMIZER.SCHEDULE_GAMMA)
+schedule = CustomSchedule(max_lr,warmup_steps,schedule_gamma)
 optimizer = optimizer_type(schedule)
 
-label_smoothing = FLAGS.TRAIN.LABEL_SMOOTHING
+label_smoothing = FLAGS.LOSS.LABEL_SMOOTHING
 
 def CE_loss(label,raw_predict,smoothing,corpus_size):
     one_hot_label = tf.one_hot(label,axis=-1,depth=corpus_size)
@@ -161,17 +161,21 @@ for e in range(total_epochs):
     ncols = FLAGS.LOGGING.TEST_IMAGE_COLUMNS
     nrows = math.ceil(len(test_data)/ncols)
     test_img_index = 1
-    plt.figure(figsize=(30,30),dpi=10)
+    
+    fig = plt.figure(figsize=(25,25),dpi=10)
+    plt.title('Predict string\n',fontsize=40)
+    plt.axis(False)
     for test_images, test_filepaths in test_data:
         test_preds = model.predict(test_images)
         for test_filepath,test_pred in zip(test_filepaths,test_preds):
             test_img = plt.imread(test_filepath.as_posix())/255
-            test_img = utils.draw_bbox_on_image(test_img,test_pred,lw=10)
-            plt.subplot(nrows,ncols,test_img_index)
+            fig.add_subplot(nrows,ncols,test_img_index)
             plt.imshow(test_img,cmap='gray')
-            plt.title('Predict string:\n'+test_pred,fontsize=10)
+            plt.title(test_pred,fontsize=20)
             plt.axis(False)
             test_img_index += 1
+    plt.tight_layout()
+    
     buf = io.BytesIO()
     plt.savefig(buf, format='jpg', bbox_inches='tight', dpi=60)
     plt.close()

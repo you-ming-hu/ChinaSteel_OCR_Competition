@@ -1,10 +1,11 @@
 import numpy as np
-import FLAGS
-import Dataset
 import pandas as pd
 import tensorflow as tf
 
-corpus = FLAGS.CORPUS
+import INVARIANT
+import Dataset
+
+corpus = INVARIANT.CORPUS
 char2token_dict = {char:token for token,char in enumerate(corpus)}
 token2char_dict = {token:char for token,char in enumerate(corpus)}
 
@@ -31,9 +32,16 @@ def log_best_val_metrics(epoch,step,metrics,save_weights_path,train_writer,valid
         if epoch == 0:
             best_value.assign(current_loss)
         else:
-            if current_loss < best_value:
-                best_value.assign(current_loss)
-                with train_writer.as_default(step):
-                    context = '  \n'.join([f'Epoch: {epoch}',f'Step: {step}', f'Loss: {best_value}', f"Weight: {save_weights_path.joinpath('weights').as_posix()}"])
-                    tf.summary.text('best '+metric.name,context)
+            if metric.name in ['Cross Entropy loss']:
+                if current_loss < best_value:
+                    best_value.assign(current_loss)
+                    with train_writer.as_default(step):
+                        context = '  \n'.join([f'Epoch: {epoch}',f'Step: {step}', f'{metric.name}: {best_value.numpy()}', f"Weight: {save_weights_path.joinpath('weights').as_posix()}"])
+                        tf.summary.text('best '+metric.name,context)
+            else:
+                if current_loss > best_value:
+                    best_value.assign(current_loss)
+                    with train_writer.as_default(step):
+                        context = '  \n'.join([f'Epoch: {epoch}',f'Step: {step}', f'{metric.name}: {best_value.numpy()}', f"Weight: {save_weights_path.joinpath('weights').as_posix()}"])
+                        tf.summary.text('best '+metric.name,context)
         metric.reset_state()
